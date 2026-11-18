@@ -1,0 +1,30 @@
+services:
+  meetr:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MEETR_DB: postgres://meetr:${DB_KENNWORT}@db:5432/meetr?sslmode=disable
+    ports:
+      - "8370:8370"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: meetr
+      POSTGRES_PASSWORD: ${DB_KENNWORT}
+      POSTGRES_DB: meetr
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meetr -d meetr"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db:

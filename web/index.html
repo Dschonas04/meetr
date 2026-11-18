@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meetr</title>
+<style>
+  :root { --bg: #fafafa; --text: #161616; --muted: #666; --rand: #e3e3e3; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #121212; --text: #eee; --muted: #9a9a9a; --rand: #2a2a2a; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, sans-serif; }
+  main { max-width: 640px; margin: 12vh auto; padding: 0 16px; }
+  h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.02em; }
+  p { color: var(--muted); margin: 0 0 24px; }
+  ul { padding-left: 18px; border-top: 1px solid var(--rand); padding-top: 16px; }
+  li { margin: 4px 0; }
+  .stand { font-size: 12px; color: var(--muted); margin-top: 32px; }
+</style>
+</head>
+<body>
+  <main>
+    <h1>Meetr</h1>
+    <p>Videokonferenzen im Browser, auf dem eigenen Server: Räume per Link, Bildschirmfreigabe, Chat.</p>
+    <ul>
+      <li>Räume per Link, fest oder für einen Termin, mit Wartebereich und Kennwort nach Wahl</li>
+      <li>Video und Ton über WebRTC mit eigenem SFU (Pion): jeder schickt einmal, der Server verteilt</li>
+      <li>Bildschirmfreigabe, Chat im Raum, Hand heben, Reaktionen</li>
+      <li>Moderation: stummschalten, Kamera aus, entfernen, Raum abschließen</li>
+      <li>Gastgeber über Keycloak, Gäste ohne Konto über den Link</li>
+      <li>TURN (coturn) für Teilnehmer hinter strengen Firewalls</li>
+      <li>Sprecheransicht und Galerie, Simulcast für schwache Verbindungen</li>
+      <li>Später: Aufzeichnung, Untertitel mit lokalem Whisper</li>
+    </ul>
+    <div class="stand">In Vorbereitung</div>
+  </main>
+</body>
+</html>
