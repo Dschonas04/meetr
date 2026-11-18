@@ -1,0 +1,44 @@
+{{define "mainklasse"}} class="breit raum-seite"{{end}}
+{{define "kopfzeilen"}}<link rel="stylesheet" href="/statisch/meetr.css">{{end}}
+{{define "inhalt"}}
+<div id="raum" data-kennung="{{.D.R.Kennung}}" data-angemeldet="{{.D.Angemeldet}}" data-gastgeber="{{.D.Gastgeber}}">
+  <div class="vorraum" id="vorraum">
+    <div class="karte" style="max-width:520px;margin:30px auto">
+      <h1 style="margin-bottom:4px">{{.D.R.Name}}</h1>
+      <p class="muted" style="margin-top:0">{{if .D.R.GastgeberName}}Gastgeber: {{.D.R.GastgeberName}}{{end}}</p>
+      <video id="vorschau" autoplay muted playsinline></video>
+      {{if not .D.Angemeldet}}<label for="name">Dein Name</label><input type="text" id="name" maxlength="40" placeholder="Name" autocomplete="name">{{end}}
+      <div class="leiste" style="margin-top:12px">
+        <label style="margin:0"><input type="checkbox" id="mitkamera" checked> Kamera</label>
+        <label style="margin:0"><input type="checkbox" id="mitmikro" checked> Mikrofon</label>
+        <button class="primaer" id="beitreten" style="margin-left:auto">Beitreten</button>
+      </div>
+      <p class="muted klein" id="vorhinweis"></p>
+    </div>
+  </div>
+  <div class="warten" id="warten" hidden><div class="karte" style="max-width:420px;margin:60px auto;text-align:center"><h2>Einen Moment</h2><p class="muted">Du bist im Wartebereich. Gleich lässt dich jemand herein.</p></div></div>
+  <div class="konferenz" id="konferenz" hidden>
+    <div class="buehne" id="buehne"></div>
+    <aside class="seite" id="seite">
+      <div class="anfragen" id="anfragen"></div>
+      <h3>Teilnehmende</h3>
+      <ul id="leute" class="leute"></ul>
+      <h3>Chat</h3>
+      <div id="chat" class="chat"></div>
+      <form id="chatform" class="leiste" style="margin:6px 0 0"><input type="text" id="chattext" placeholder="Nachricht" autocomplete="off" aria-label="Nachricht"><button>Senden</button></form>
+      <h3>Link</h3>
+      <input type="text" readonly value="{{.D.Link}}" class="code klein" aria-label="Link zum Raum">
+    </aside>
+    <div class="steuerung">
+      <button id="mikro" title="Mikrofon (M)">🎤 Mikro</button>
+      <button id="kamera" title="Kamera (V)">📷 Kamera</button>
+      <button id="bildschirm" title="Bildschirm teilen">🖥 Teilen</button>
+      <button id="hand" title="Hand heben">✋ Hand</button>
+      <button id="seiteknopf" title="Seitenleiste">💬</button>
+      <button id="gehen" class="gefahr">Verlassen</button>
+    </div>
+  </div>
+</div>
+<script type="application/json" id="ice">{{.D.ICE}}</script>
+{{end}}
+{{define "skripte"}}<script src="/statisch/meetr.js" defer></script>{{end}}

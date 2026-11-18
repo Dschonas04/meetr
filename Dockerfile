@@ -1,14 +1,15 @@
 FROM golang:1.27.4-alpine AS bau
 WORKDIR /quelle
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=entwicklung
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /meetr .
 
 FROM alpine:3.24
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 meetr
-ENV TZ=Europe/Berlin
+RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 meetr \
+ && mkdir /einstellungen && chown meetr /einstellungen
+ENV TZ=Europe/Berlin MEETR_SSO_DATEI=/einstellungen/sso.json
 USER meetr
 COPY --from=bau /meetr /usr/local/bin/meetr
 EXPOSE 8370

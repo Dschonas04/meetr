@@ -1,0 +1,29 @@
+.raum-seite { padding: 0 !important; }
+#vorschau { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; object-fit: cover; transform: scaleX(-1); }
+.konferenz { display: grid; grid-template-columns: 1fr 300px; grid-template-rows: 1fr auto; height: calc(100vh - 52px); }
+.konferenz.ohne-seite { grid-template-columns: 1fr 0; }
+.konferenz.ohne-seite .seite { display: none; }
+.buehne { display: grid; gap: 8px; padding: 10px; grid-auto-rows: 1fr; background: #0d0d0d; min-height: 0; }
+.kachel { position: relative; background: #1d1d1d; border-radius: 10px; overflow: hidden; min-height: 0; }
+.kachel video { width: 100%; height: 100%; object-fit: cover; background: #111; }
+.kachel.ich video { transform: scaleX(-1); }
+.kachel.teilen video { object-fit: contain; transform: none; }
+.kachel .schild { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 13px; }
+.kachel .ohnebild { position: absolute; inset: 0; display: grid; place-items: center; color: #ddd; font-size: 40px; font-weight: 700; }
+.kachel.spricht { outline: 3px solid #3fb873; outline-offset: -3px; }
+.seite { border-left: 1px solid var(--rand); padding: 10px 14px; overflow-y: auto; background: var(--flaeche); grid-row: 1 / 3; grid-column: 2; }
+.steuerung { display: flex; gap: 8px; justify-content: center; padding: 10px; background: var(--flaeche); border-top: 1px solid var(--rand); flex-wrap: wrap; }
+.steuerung button.aus { background: var(--schlecht); color: #fff; border-color: var(--schlecht); }
+.steuerung button.an { background: var(--info); color: #fff; border-color: var(--info); }
+.leute { list-style: none; padding: 0; margin: 0; }
+.leute li { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+.leute li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leute button { padding: 2px 6px; font-size: 12px; }
+.chat { max-height: 34vh; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.chat b { font-weight: 600; }
+.anfragen .karte { padding: 10px; margin-bottom: 8px; border-color: var(--warn); }
+@media (max-width: 760px) {
+  .konferenz { grid-template-columns: 1fr; }
+  .seite { position: fixed; inset: 52px 0 60px 0; z-index: 5; grid-row: auto; grid-column: auto; }
+  .konferenz.ohne-seite .seite { display: none; }
+}
