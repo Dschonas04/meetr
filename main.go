@@ -22,11 +22,12 @@ import (
 )
 
 type App struct {
-	db  *pgxpool.Pool
-	sso *SSO
-	v   Vorlagen
-	hub *Hub
-	ice json.RawMessage
+	admins []string // Vorgabe des Betreibers
+	db     *pgxpool.Pool
+	sso    *SSO
+	v      Vorlagen
+	hub    *Hub
+	ice    json.RawMessage
 }
 
 func main() {
@@ -47,6 +48,8 @@ func main() {
 		a.ice = json.RawMessage(s)
 	}
 	// Räume und ihre Verbindung prüfen selbst, ob Gäste erlaubt sind.
+	a.admins = adminListe(umgebung("MEETR_ADMIN", ""))
+	a.sso.ErstesKonto = a.ersterAdmin
 	a.sso.Frei = []string{"/statisch/", "/healthz", "/r/", "/ws/"}
 
 	adresse := ":" + umgebung("MEETR_PORT", "8370")

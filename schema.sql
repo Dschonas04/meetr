@@ -10,9 +10,8 @@ CREATE TABLE IF NOT EXISTS raeume (
 	zuletzt    timestamptz
 );
 
--- Wer die App verwaltet. Die erste angemeldete Person trägt sich ein.
+-- Wer die App eingerichtet hat und verwaltet. Dazu kommt MEETR_ADMIN.
 CREATE TABLE IF NOT EXISTS admins (
 	kennung text PRIMARY KEY,
-	erster  boolean UNIQUE,
 	seit    timestamptz NOT NULL DEFAULT now()
 );
