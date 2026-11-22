@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -15,7 +14,7 @@ func TestSeitenRendern(t *testing.T) {
 	faelle := map[string]any{
 		"start": map[string]any{"Raeume": []Raum{x}, "Basis": "https://10.0.2.7:8370"},
 		"raum": map[string]any{"R": x, "Angemeldet": true, "Name": "Jonas", "Gastgeber": true,
-			"ICE": json.RawMessage(`[{"urls":"stun:stun.example:3478"}]`), "Link": "https://10.0.2.7:8370/r/abcd-efgh-jkmn"},
+			"Reaktionen": reaktionen, "Link": "https://10.0.2.7:8370/r/abcd-efgh-jkmn"},
 		"fehlt": nil,
 	}
 	for name, d := range faelle {

@@ -1,26 +1,37 @@
+{{define "kopfzeilen"}}<link rel="stylesheet" href="/statisch/meetr.css">{{end}}
 {{define "inhalt"}}
-{{$t := .Token}}
+{{$t := .Token}}{{$basis := .D.Basis}}
 <div class="leiste"><h1>Räume</h1></div>
-<form method="post" action="/raum" class="karte leiste" style="margin-bottom:16px">
-  <input type="hidden" name="token" value="{{$t}}">
-  <input type="text" name="name" placeholder="Name, z. B. Teambesprechung" style="max-width:320px" aria-label="Name des Raums">
-  <label style="margin:0"><input type="checkbox" name="gaeste" value="ja" checked> Gäste ohne Konto über den Link (warten, bis jemand zulässt)</label>
-  <button class="primaer">Raum öffnen</button>
-</form>
+<div class="zwei">
+<div>
 {{if .D.Raeume}}
 <table>
-  <tr><th>Raum</th><th class="weg">Link</th><th>Jetzt</th><th></th></tr>
+  <tr><th>Raum</th><th>Jetzt</th><th></th></tr>
   {{range .D.Raeume}}
   <tr class="zeile">
-    <td><a href="/r/{{.Kennung}}"><strong>{{.Name}}</strong></a><div class="muted klein">{{if .Gaeste}}mit Gästen{{else}}nur mit Konto{{end}} · angelegt {{tag .Erstellt}}</div></td>
-    <td class="weg"><input type="text" readonly value="{{$.D.Basis}}/r/{{.Kennung}}" class="code klein" aria-label="Link"></td>
+    <td>
+      <a href="/r/{{.Kennung}}"><strong>{{.Name}}</strong></a>
+      <div class="muted klein">{{if .Beginn}}{{datum .Beginn}} · <a href="/r/{{.Kennung}}/termin.ics">Kalender</a> · {{end}}{{if .Gaeste}}mit Gästen{{else}}nur mit Konto{{end}}{{if .Kennwort}} · mit Kennwort{{end}}</div>
+      <input type="text" readonly value="{{$basis}}/r/{{.Kennung}}" class="code klein raumlink" aria-label="Link zu {{.Name}}">
+    </td>
     <td>{{if .Jetzt}}<span class="pille gut">{{.Jetzt}} drin</span>{{else}}<span class="muted">leer</span>{{end}}</td>
-    <td style="text-align:right;white-space:nowrap"><a class="knopf" href="/r/{{.Kennung}}">Beitreten</a>
+    <td class="raumtasten"><a class="knopf" href="/r/{{.Kennung}}">Beitreten</a>
       <form method="post" action="/raum/{{.ID}}/loeschen" class="inline" data-frage="Raum löschen? Der Link geht dann nicht mehr."><input type="hidden" name="token" value="{{$t}}"><button class="gefahr">Löschen</button></form></td>
   </tr>
   {{end}}
 </table>
-{{else}}<div class="leer">Noch keine Räume.</div>{{end}}
-<p class="muted klein">Video und Ton gehen direkt zwischen den Teilnehmern, bis 12 Personen. Im eigenen Netz klappt das ohne weiteres; von außen braucht es einen TURN-Server.</p>
+{{else}}<div class="leer"><strong>Noch keine Räume</strong>Ein Raum bleibt, bis du ihn löschst. Wer den Link hat, findet hinein.</div>{{end}}
+<p class="muted klein">Video und Ton gehen direkt zwischen den Teilnehmenden, bis 12 Personen. Von außerhalb des eigenen Netzes braucht es einen TURN-Server.</p>
+</div>
+<form method="post" action="/raum" class="karte">
+  <h2>Neuer Raum</h2>
+  <input type="hidden" name="token" value="{{$t}}">
+  <label for="name">Name</label><input type="text" id="name" name="name" maxlength="100" placeholder="Teambesprechung">
+  <label for="beginn">Termin (freiwillig)</label><input type="datetime-local" id="beginn" name="beginn">
+  <label for="kennwort">Kennwort (freiwillig)</label><input type="password" id="kennwort" name="kennwort" maxlength="200" autocomplete="new-password">
+  <label><input type="checkbox" name="gaeste" value="ja" checked> Gäste ohne Konto, sie warten bis zum Einlass</label>
+  <button class="primaer oeffnen">Raum anlegen</button>
+</form>
+</div>
 {{end}}
 {{define "skripte"}}<script src="/statisch/verwalten.js" defer></script>{{end}}

@@ -46,8 +46,9 @@ func main() {
 		ice: json.RawMessage("[]"),
 	}
 	if s := os.Getenv("MEETR_ICE"); s != "" {
-		if !json.Valid([]byte(s)) {
-			log.Fatal("MEETR_ICE ist kein gültiges JSON")
+		var server []map[string]any
+		if json.Unmarshal([]byte(s), &server) != nil {
+			log.Fatal("MEETR_ICE ist keine JSON-Liste von ICE-Servern")
 		}
 		a.ice = json.RawMessage(s)
 	}
@@ -82,6 +83,7 @@ func (a *App) wege() http.Handler {
 	m.HandleFunc("POST /raum", a.raumAnlegen)
 	m.HandleFunc("POST /raum/{id}/loeschen", a.raumLoeschen)
 	m.HandleFunc("GET /r/{kennung}", a.raum)
+	m.HandleFunc("GET /r/{kennung}/termin.ics", a.termin)
 	m.HandleFunc("GET /ws/{kennung}", a.verbindung)
 	inner := nurAngemeldet(a.sso, m)
 	return sicherheitskopf(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

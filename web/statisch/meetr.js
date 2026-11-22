@@ -1,185 +1,399 @@
-// Meetr im Browser: WebRTC-Mesh, Signalisierung über WebSocket.
+// Meetr im Browser: WebRTC-Mesh, Signalisierung über WebSocket. Wer neu kommt,
+// bietet an, mit je einem Platz für Ton und Bild. Getauscht wird danach nur
+// noch die Spur, das geht auch, wenn jemand ohne Kamera gekommen ist.
 (() => {
   const $ = (id) => document.getElementById(id);
   const raum = $("raum");
   if (!raum) return;
   const kennung = raum.dataset.kennung;
   const angemeldet = raum.dataset.angemeldet === "true";
+  const gastgeber = raum.dataset.gastgeber === "true";
   let ice = [];
-  try { ice = JSON.parse($("ice").textContent || "[]"); } catch {}
-  let lokal = null, bildschirm = null, ws = null, meineID = "";
-  const peers = new Map(); // id -> {pc, kachel, name}
-  const namen = new Map();
+  let lokal = new MediaStream(), bildschirm = null, ws = null, meineID = "", beendet = false;
+  let gesperrt = false, sprecher = "", gepinnt = "", kette = Promise.resolve(), laufend = 0;
+  const peers = new Map();  // id -> {pc, anbieter}
+  const leute = new Map();  // id -> Person
+  const kacheln = new Map();
+  const meiner = { mikro: false, kamera: false, bild: false, hand: false };
 
+  // ---------- Vorraum
+  const anhalten = (strom) => strom?.getTracks().forEach((t) => t.stop());
+  const medien = async (video, audio) => {
+    if (!video && !audio) return new MediaStream();
+    return navigator.mediaDevices.getUserMedia({ video, audio });
+  };
   const vorschauStarten = async () => {
+    const nr = ++laufend;
+    const video = $("mitkamera").checked, audio = $("mitmikro").checked;
+    $("beitreten").disabled = true;
+    $("vorhinweis").textContent = "";
+    anhalten(lokal);
+    let neu;
     try {
-      lokal = await navigator.mediaDevices.getUserMedia({ video: $("mitkamera").checked, audio: $("mitmikro").checked });
-      $("vorschau").srcObject = lokal;
+      neu = await medien(video, audio);
     } catch (e) {
-      lokal = new MediaStream();
-      $("vorhinweis").textContent = "Kamera oder Mikrofon nicht verfügbar: " + e.message;
+      // Fehlt eins von beiden, geht das andere trotzdem.
+      const l = [];
+      if (video && audio) {
+        for (const p of [[false, true], [true, false]]) {
+          try { l.push(...(await medien(...p)).getTracks()); } catch { /* steht im Hinweis */ }
+        }
+      }
+      neu = new MediaStream(l);
+      if (nr === laufend) $("vorhinweis").textContent = "Kamera oder Mikrofon nicht verfügbar. Beitreten geht trotzdem.";
     }
+    if (nr !== laufend) { anhalten(neu); return; }
+    lokal = neu;
+    $("vorschau").srcObject = lokal;
+    $("beitreten").disabled = false;
   };
   $("mitkamera").addEventListener("change", vorschauStarten);
   $("mitmikro").addEventListener("change", vorschauStarten);
   vorschauStarten();
 
-  const kachel = (id, name, ich) => {
+  const senden = (n) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(n)); };
+
+  // ---------- Bühne
+  const anordnen = () => {
+    const n = kacheln.size || 1, b = $("buehne");
+    b.style.gridTemplateColumns = `repeat(${Math.ceil(Math.sqrt(n))}, minmax(0, 1fr))`;
+    b.style.setProperty("--kleine", Math.max(1, n - 1));
+    const an = b.classList.contains("sprecher");
+    const teilt = [...leute].find(([, p]) => p.zustand.bild)?.[0];
+    const andere = [...kacheln.keys()].find((id) => id !== meineID) || meineID;
+    const gross = [gepinnt, teilt, sprecher, andere].find((id) => id && kacheln.has(id));
+    for (const [id, k] of kacheln) k.classList.toggle("gross", an && id === gross);
+  };
+  const kachel = (id) => {
     const k = document.createElement("div");
-    k.className = "kachel" + (ich ? " ich" : "");
+    k.className = "kachel" + (id === meineID ? " ich" : "");
     k.dataset.id = id;
     const v = document.createElement("video");
-    v.autoplay = true; v.playsInline = true; if (ich) v.muted = true;
-    const s = document.createElement("div");
-    s.className = "schild"; s.textContent = name + (ich ? " (du)" : "");
-    k.append(v, s);
+    v.autoplay = true; v.playsInline = true; v.muted = id === meineID;
+    v.srcObject = id === meineID ? lokal : new MediaStream();
+    const teile = [v, ...["ohnebild", "schild", "marke-hand"].map((c) => {
+      const d = document.createElement("div"); d.className = c; return d;
+    })];
+    k.append(...teile);
+    k.addEventListener("click", () => { gepinnt = gepinnt === id ? "" : id; anordnen(); });
     $("buehne").append(k);
-    anordnen();
-    return k;
+    kacheln.set(id, k);
   };
-  const anordnen = () => {
-    const n = $("buehne").children.length || 1;
-    const sp = Math.ceil(Math.sqrt(n));
-    $("buehne").style.gridTemplateColumns = `repeat(${sp}, 1fr)`;
+  const zeigen = (id) => {
+    const p = leute.get(id), k = kacheln.get(id);
+    if (!p || !k) return;
+    const ich = id === meineID, z = p.zustand;
+    k.querySelector(".schild").textContent = (ich ? "Du" : p.name) + (z.mikro ? "" : " · stumm");
+    k.querySelector(".ohnebild").textContent = [...p.name][0]?.toUpperCase() || "";
+    k.querySelector(".marke-hand").textContent = z.hand ? "✋" : "";
+    k.classList.toggle("ohnevideo", !z.kamera);
+    k.classList.toggle("teilen", z.bild);
   };
   const leuteZeigen = () => {
-    const ul = $("leute"); ul.innerHTML = "";
-    const eintrag = (id, name) => {
+    const mich = leute.get(meineID);
+    $("leute").replaceChildren(...[...leute].map(([id, p]) => {
       const li = document.createElement("li");
-      const s = document.createElement("span"); s.textContent = name; li.append(s);
-      if (angemeldet && id !== meineID) {
-        for (const [typ, text] of [["stumm", "Stumm"], ["entfernen", "Raus"]]) {
-          const b = document.createElement("button"); b.textContent = text;
-          b.onclick = () => senden({ typ, an: id }); li.append(b);
+      const s = document.createElement("span");
+      s.textContent = (id === meineID ? "Du" : p.name) + (p.zustand.hand ? " ✋" : "");
+      const rolle = document.createElement("span");
+      rolle.className = "rolle";
+      rolle.textContent = [p.gastgeber ? "Gastgeber" : "", p.zustand.mikro ? "" : "stumm"].filter(Boolean).join(" · ");
+      li.append(s, rolle);
+      if (id !== meineID && mich && (mich.gastgeber || (mich.angemeldet && !p.angemeldet))) {
+        for (const [typ, text] of [["stumm", "Stumm"], ["kamera-aus", "Kamera aus"], ["entfernen", "Entfernen"]]) {
+          const b = document.createElement("button");
+          b.type = "button"; b.textContent = text;
+          b.onclick = () => senden({ typ, an: id });
+          li.append(b);
         }
       }
-      ul.append(li);
-    };
-    eintrag(meineID, "Du");
-    for (const [id, n] of namen) eintrag(id, n);
+      return li;
+    }));
   };
-  const chatZeile = (name, text) => {
+  const alles = () => { for (const id of leute.keys()) zeigen(id); leuteZeigen(); anordnen(); };
+  const meldung = (text, wer) => {
     const d = document.createElement("div");
-    const b = document.createElement("b"); b.textContent = name + ": ";
-    d.append(b, document.createTextNode(text));
-    $("chat").append(d); $("chat").scrollTop = 1e9;
+    if (wer) {
+      const b = document.createElement("b");
+      b.textContent = wer + ": ";
+      d.append(b);
+    } else d.className = "meldung";
+    d.append(text);
+    $("chat").append(d);
+    $("chat").scrollTop = 1e9;
   };
-  const senden = (n) => ws && ws.readyState === 1 && ws.send(JSON.stringify(n));
 
-  const verbinden = (id, name, anbieten) => {
-    const pc = new RTCPeerConnection({ iceServers: ice });
-    const k = kachel(id, name, false);
-    peers.set(id, { pc, kachel: k });
-    namen.set(id, name); leuteZeigen();
-    const strom = bildschirm || lokal;
-    for (const t of lokal.getAudioTracks()) pc.addTrack(t, lokal);
-    const vt = (bildschirm && bildschirm.getVideoTracks()[0]) || lokal.getVideoTracks()[0];
-    if (vt) pc.addTrack(vt, strom);
-    pc.onicecandidate = (e) => e.candidate && senden({ typ: "signal", an: id, daten: { kandidat: e.candidate } });
-    pc.ontrack = (e) => { k.querySelector("video").srcObject = e.streams[0]; };
-    pc.onconnectionstatechange = () => { if (pc.connectionState === "failed") pc.restartIce(); };
-    if (anbieten) {
+  // ---------- Verbindungen
+  const spur = (art) => (art === "audio" ? lokal.getAudioTracks()[0]
+    : bildschirm?.getVideoTracks()[0] || lokal.getVideoTracks()[0]) || null;
+
+  const verbinden = (id, anbieter) => {
+    const pc = new RTCPeerConnection({ iceServers: ice, bundlePolicy: "max-bundle" });
+    peers.set(id, { pc, anbieter });
+    pc.onicecandidate = (e) => { if (e.candidate) senden({ typ: "signal", an: id, daten: { kandidat: e.candidate } }); };
+    pc.ontrack = (e) => {
+      const s = kacheln.get(id)?.querySelector("video").srcObject;
+      if (s && !s.getTracks().includes(e.track)) s.addTrack(e.track);
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState !== "failed") return;
+      if (anbieter) pc.restartIce();
+      else meldung("Die Verbindung zu " + (leute.get(id)?.name || "jemandem") + " hakt.");
+    };
+    if (anbieter) {
       pc.onnegotiationneeded = async () => {
-        await pc.setLocalDescription(await pc.createOffer());
-        senden({ typ: "signal", an: id, daten: { sdp: pc.localDescription } });
+        try {
+          await pc.setLocalDescription(await pc.createOffer());
+          senden({ typ: "signal", an: id, daten: { sdp: pc.localDescription } });
+        } catch (e) { console.error("Angebot", e); }
       };
+      for (const art of ["audio", "video"]) pc.addTransceiver(spur(art) || art, { direction: "sendrecv" });
     }
-    return pc;
-  };
-  const trennen = (id) => {
-    const p = peers.get(id);
-    if (p) { p.pc.close(); p.kachel.remove(); peers.delete(id); }
-    namen.delete(id); leuteZeigen(); anordnen();
+    return peers.get(id);
   };
 
   const signal = async (von, d) => {
-    let p = peers.get(von);
-    if (!p) { verbinden(von, namen.get(von) || "…", false); p = peers.get(von); }
-    if (d.sdp) {
-      await p.pc.setRemoteDescription(d.sdp);
-      if (d.sdp.type === "offer") {
-        await p.pc.setLocalDescription(await p.pc.createAnswer());
-        senden({ typ: "signal", an: von, daten: { sdp: p.pc.localDescription } });
+    if (!d || !leute.has(von)) return;
+    const { pc, anbieter } = peers.get(von) || verbinden(von, false);
+    if (d.sdp?.type === "offer" && !anbieter) {
+      await pc.setRemoteDescription(d.sdp);
+      for (const t of pc.getTransceivers()) {
+        t.direction = "sendrecv";
+        await t.sender.replaceTrack(spur(t.receiver.track.kind));
       }
+      await pc.setLocalDescription(await pc.createAnswer());
+      senden({ typ: "signal", an: von, daten: { sdp: pc.localDescription } });
+    } else if (d.sdp?.type === "answer" && anbieter) {
+      await pc.setRemoteDescription(d.sdp);
     } else if (d.kandidat) {
-      try { await p.pc.addIceCandidate(d.kandidat); } catch {}
+      await pc.addIceCandidate(d.kandidat);
     }
   };
 
-  $("beitreten").onclick = () => {
-    const name = $("name") ? $("name").value.trim() : "";
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(`${proto}//${location.host}/ws/${kennung}?name=${encodeURIComponent(name)}`);
-    $("vorraum").hidden = true;
-    ws.onmessage = async (ev) => {
-      const n = JSON.parse(ev.data);
-      switch (n.typ) {
-        case "warten": $("warten").hidden = false; break;
-        case "willkommen":
-          meineID = n.von; $("warten").hidden = true; $("konferenz").hidden = false;
-          kachel(meineID, "Du", true).querySelector("video").srcObject = lokal;
-          for (const p of n.liste || []) if (p.id !== meineID) { namen.set(p.id, p.name); verbinden(p.id, p.name, true); }
-          leuteZeigen(); break;
-        case "neu": namen.set(n.von, n.name); leuteZeigen(); chatZeile("Meetr", n.name + " ist da"); break;
-        case "weg": chatZeile("Meetr", (namen.get(n.von) || "Jemand") + " ist gegangen"); trennen(n.von); break;
-        case "signal": await signal(n.von, n.daten); break;
-        case "chat": chatZeile(n.name, n.text); break;
-        case "anfrage": {
-          const d = document.createElement("div"); d.className = "karte"; d.dataset.id = n.von;
-          d.append(document.createTextNode(n.name + " möchte herein "));
-          for (const [typ, text] of [["zulassen", "Zulassen"], ["ablehnen", "Ablehnen"]]) {
-            const b = document.createElement("button"); b.textContent = text;
-            b.onclick = () => { senden({ typ, an: n.von }); d.remove(); }; d.append(b);
-          }
-          $("anfragen").append(d); break;
+  const dazu = (p) => { leute.set(p.id, p); kachel(p.id); };
+  const trennen = (id) => {
+    peers.get(id)?.pc.close();
+    peers.delete(id);
+    kacheln.get(id)?.remove();
+    kacheln.delete(id);
+    leute.delete(id);
+    if (gepinnt === id) gepinnt = "";
+    alles();
+  };
+
+  const melden = () => {
+    meiner.mikro = !!lokal.getAudioTracks()[0]?.enabled;
+    meiner.kamera = !!lokal.getVideoTracks()[0]?.enabled;
+    meiner.bild = !!bildschirm;
+    const mich = leute.get(meineID);
+    if (!mich) return;
+    mich.zustand = { ...meiner };
+    $("mikro").classList.toggle("aus", !meiner.mikro);
+    $("kamera").classList.toggle("aus", !meiner.kamera);
+    $("bildschirm").classList.toggle("an", meiner.bild);
+    $("hand").setAttribute("aria-pressed", String(meiner.hand));
+    senden({ typ: "zustand", daten: meiner });
+    alles();
+  };
+
+  const schluss = (text) => {
+    if (beendet) return;
+    beendet = true;
+    for (const { pc } of peers.values()) pc.close();
+    anhalten(lokal); anhalten(bildschirm);
+    for (const id of ["vorraum", "warten", "konferenz"]) $(id).hidden = true;
+    $("ende").hidden = false;
+    $("endetext").textContent = text;
+    ws?.close();
+  };
+  const gruende = {
+    "voll": "Der Raum ist voll.",
+    "gesperrt": "Der Raum ist abgeschlossen.",
+    "zu-oft": "Zu viele Versuche, bitte kurz warten.",
+    "weg-raum": "Diesen Raum gibt es nicht mehr.",
+    "anmelden": "Dieser Raum braucht eine Anmeldung.",
+    "abgelehnt": "Du wurdest nicht hereingelassen.",
+    "entfernt": "Du wurdest aus dem Raum entfernt.",
+  };
+
+  const empfangen = async (n) => {
+    if (gruende[n.typ]) return schluss(gruende[n.typ]);
+    switch (n.typ) {
+      case "kennwort":
+        ws.onclose = null; ws.close(); ws = null;
+        $("beitreten").disabled = false;
+        $("vorhinweis").textContent = "Das Kennwort stimmt nicht.";
+        $("kennwort")?.focus();
+        break;
+      case "warten":
+        $("vorraum").hidden = true; $("warten").hidden = false;
+        break;
+      case "willkommen":
+        meineID = n.von; ice = n.ice || []; gesperrt = !!n.ja;
+        $("vorraum").hidden = $("warten").hidden = true;
+        $("konferenz").hidden = false;
+        if (matchMedia("(max-width: 760px)").matches) $("konferenz").classList.add("ohne-seite");
+        for (const p of n.liste || []) {
+          dazu(p);
+          if (p.id !== meineID) verbinden(p.id, true);
         }
-        case "erledigt": $("anfragen").querySelector(`[data-id="${n.von}"]`)?.remove(); break;
-        case "stumm": lokal.getAudioTracks().forEach((t) => (t.enabled = false)); $("mikro").classList.add("aus"); chatZeile("Meetr", n.name + " hat dich stummgeschaltet"); break;
-        case "zustand": if (n.daten?.hand) chatZeile("Meetr", (namen.get(n.von) || "?") + " hebt die Hand ✋"); break;
-        case "abgelehnt": case "entfernt": case "voll":
-          alert(n.typ === "voll" ? "Der Raum ist voll." : n.typ === "abgelehnt" ? "Du wurdest nicht hereingelassen." : "Du wurdest aus dem Raum entfernt.");
-          location.href = "/r/" + kennung; break;
+        schlossZeigen();
+        melden();
+        break;
+      case "neu":
+        dazu(n.wer); alles();
+        meldung(n.wer.name + " ist da");
+        break;
+      case "weg":
+        if (!leute.has(n.von)) break;
+        meldung(leute.get(n.von).name + " ist gegangen");
+        trennen(n.von);
+        break;
+      case "signal": await signal(n.von, n.daten); break;
+      case "zustand": {
+        const p = leute.get(n.von);
+        if (!p) break;
+        if (n.wer.zustand.hand && !p.zustand.hand) meldung(p.name + " hebt die Hand");
+        p.zustand = n.wer.zustand;
+        alles();
+        break;
       }
-    };
-    ws.onclose = () => { if (!$("konferenz").hidden) chatZeile("Meetr", "Verbindung getrennt"); };
+      case "reaktion": {
+        const k = kacheln.get(n.von);
+        if (!k) break;
+        k.querySelector(".reaktion")?.remove();
+        const d = document.createElement("div");
+        d.className = "reaktion"; d.textContent = n.text;
+        k.append(d);
+        setTimeout(() => d.remove(), 2500);
+        break;
+      }
+      case "chat": meldung(n.text, n.von === meineID ? "Du" : n.name); break;
+      case "anfrage": {
+        const d = document.createElement("div");
+        d.className = "karte"; d.dataset.id = n.von;
+        d.append(n.name + " möchte herein ");
+        for (const [typ, text] of [["zulassen", "Zulassen"], ["ablehnen", "Ablehnen"]]) {
+          const b = document.createElement("button");
+          b.type = "button"; b.textContent = text;
+          b.onclick = () => senden({ typ, an: n.von });
+          d.append(b);
+        }
+        $("anfragen").append(d);
+        $("konferenz").classList.remove("ohne-seite");
+        break;
+      }
+      case "erledigt": $("anfragen").querySelector(`[data-id="${CSS.escape(n.von)}"]`)?.remove(); break;
+      case "kein-platz": meldung("Der Raum ist voll."); break;
+      case "abschliessen":
+        gesperrt = !!n.ja; schlossZeigen();
+        meldung(gesperrt ? "Der Raum ist abgeschlossen." : "Der Raum ist wieder offen.");
+        break;
+      case "stumm":
+        lokal.getAudioTracks().forEach((t) => { t.enabled = false; });
+        meldung(n.name + " hat dich stummgeschaltet"); melden();
+        break;
+      case "kamera-aus":
+        lokal.getVideoTracks().forEach((t) => { t.enabled = false; });
+        meldung(n.name + " hat deine Kamera ausgeschaltet"); melden();
+        break;
+    }
   };
 
-  const umschalten = (art, knopf) => {
-    const tr = art === "audio" ? lokal.getAudioTracks() : lokal.getVideoTracks();
-    tr.forEach((t) => (t.enabled = !t.enabled));
-    knopf.classList.toggle("aus", tr.length > 0 && !tr[0].enabled);
+  $("beitritt").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (ws) return;
+    $("beitreten").disabled = true;
+    $("vorhinweis").textContent = "";
+    const hallo = { typ: "hallo", name: $("name")?.value || "", text: $("kennwort")?.value || "" };
+    ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/${kennung}`);
+    ws.onopen = () => senden(hallo);
+    // Der Reihe nach: ein Kandidat darf seine Beschreibung nicht überholen.
+    ws.onmessage = (ev) => {
+      kette = kette.then(() => empfangen(JSON.parse(ev.data))).catch((err) => console.error("Meetr", err));
+    };
+    ws.onclose = () => { kette = kette.then(() => { if (ws) schluss("Die Verbindung ist getrennt."); }); };
+  });
+
+  // ---------- Steuerung
+  const umschalten = (art) => {
+    for (const t of art === "audio" ? lokal.getAudioTracks() : lokal.getVideoTracks()) t.enabled = !t.enabled;
+    melden();
   };
-  $("mikro").onclick = () => umschalten("audio", $("mikro"));
-  $("kamera").onclick = () => umschalten("video", $("kamera"));
-  const videoErsetzen = (track) => {
+  $("mikro").onclick = () => umschalten("audio");
+  $("kamera").onclick = () => umschalten("video");
+  const bildTauschen = async () => {
+    const t = spur("video");
     for (const { pc } of peers.values()) {
-      const s = pc.getSenders().find((x) => x.track && x.track.kind === "video");
-      if (s) s.replaceTrack(track);
+      const tr = pc.getTransceivers().find((x) => x.receiver.track.kind === "video");
+      if (tr) await tr.sender.replaceTrack(t).catch((e) => console.error("Bild", e));
     }
+    const v = kacheln.get(meineID)?.querySelector("video");
+    if (v) v.srcObject = bildschirm || lokal;
+    melden();
+  };
+  const teilenEnde = () => {
+    if (!bildschirm) return;
+    anhalten(bildschirm);
+    bildschirm = null;
+    return bildTauschen();
   };
   $("bildschirm").onclick = async () => {
-    if (bildschirm) {
-      bildschirm.getTracks().forEach((t) => t.stop()); bildschirm = null;
-      videoErsetzen(lokal.getVideoTracks()[0] || null); $("bildschirm").classList.remove("an"); return;
-    }
+    if (bildschirm) return teilenEnde();
     try {
       bildschirm = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      const t = bildschirm.getVideoTracks()[0];
-      videoErsetzen(t); $("bildschirm").classList.add("an");
-      t.onended = () => $("bildschirm").onclick();
-    } catch {}
+    } catch {
+      return; // abgebrochen
+    }
+    bildschirm.getVideoTracks()[0].onended = teilenEnde;
+    await bildTauschen();
   };
-  $("hand").onclick = () => { senden({ typ: "zustand", daten: { hand: true } }); chatZeile("Du", "hebst die Hand ✋"); };
+  $("hand").onclick = () => { meiner.hand = !meiner.hand; melden(); };
+  for (const b of document.querySelectorAll("[data-reaktion]")) b.onclick = () => senden({ typ: "reaktion", text: b.dataset.reaktion });
+  $("ansicht").onclick = () => {
+    const an = $("buehne").classList.toggle("sprecher");
+    $("ansicht").setAttribute("aria-pressed", String(an));
+    anordnen();
+  };
+  function schlossZeigen() {
+    const s = $("schloss");
+    if (!s) return;
+    s.setAttribute("aria-pressed", String(gesperrt));
+    s.textContent = gesperrt ? "Aufschließen" : "Abschließen";
+  }
+  if (gastgeber && angemeldet) $("schloss").onclick = () => senden({ typ: "abschliessen", ja: !gesperrt });
   $("seiteknopf").onclick = () => $("konferenz").classList.toggle("ohne-seite");
-  $("gehen").onclick = () => { ws && ws.close(); location.href = angemeldet ? "/" : "/r/" + kennung; };
+  $("gehen").onclick = () => {
+    beendet = true;
+    anhalten(lokal); anhalten(bildschirm);
+    ws?.close();
+    location.href = angemeldet ? "/" : "/r/" + kennung;
+  };
+  $("nochmal").onclick = () => location.reload();
   $("chatform").onsubmit = (e) => {
     e.preventDefault();
     const t = $("chattext").value.trim();
     if (t) { senden({ typ: "chat", text: t }); $("chattext").value = ""; }
   };
   document.addEventListener("keydown", (e) => {
-    if (e.target.tagName === "INPUT" || $("konferenz").hidden) return;
-    if (e.key === "m") $("mikro").click();
-    if (e.key === "v") $("kamera").click();
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || e.target.closest?.("input, textarea") || $("konferenz").hidden) return;
+    const ziel = { m: "mikro", v: "kamera", h: "hand", s: "ansicht" }[e.key.toLowerCase()];
+    if (ziel) $(ziel).click();
   });
+
+  // Wer spricht, sagt der Empfänger selbst.
+  setInterval(() => {
+    if (!peers.size) return;
+    let lauteste = "", pegel = 0.02;
+    for (const [id, { pc }] of peers) {
+      let l = 0;
+      for (const r of pc.getReceivers()) {
+        if (r.track.kind !== "audio" || !r.getSynchronizationSources) continue;
+        for (const q of r.getSynchronizationSources()) l = Math.max(l, q.audioLevel || 0);
+      }
+      kacheln.get(id)?.classList.toggle("spricht", l > 0.02);
+      if (l > pegel) { pegel = l; lauteste = id; }
+    }
+    if (lauteste && lauteste !== sprecher) { sprecher = lauteste; anordnen(); }
+  }, 700);
 })();

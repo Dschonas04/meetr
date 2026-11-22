@@ -15,3 +15,6 @@ CREATE TABLE IF NOT EXISTS admins (
 	kennung text PRIMARY KEY,
 	seit    timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE raeume ADD COLUMN IF NOT EXISTS kennwort text NOT NULL DEFAULT '';  -- nur der Hash
+ALTER TABLE raeume ADD COLUMN IF NOT EXISTS beginn timestamptz;

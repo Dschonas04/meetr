@@ -1,29 +1,59 @@
-.raum-seite { padding: 0 !important; }
-#vorschau { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; object-fit: cover; transform: scaleX(-1); }
-.konferenz { display: grid; grid-template-columns: 1fr 300px; grid-template-rows: 1fr auto; height: calc(100vh - 52px); }
-.konferenz.ohne-seite { grid-template-columns: 1fr 0; }
+[hidden] { display: none !important; }
+.raumlink { margin-top: 6px; max-width: 340px; }
+.raumtasten { text-align: right; white-space: nowrap; }
+.oeffnen { margin-top: 14px; width: 100%; }
+
+body:has(.raum-seite) { height: 100dvh; display: flex; flex-direction: column; }
+body:has(.raum-seite) > .kopf { flex: none; }
+main.raum-seite { flex: 1; min-height: 0; width: 100%; max-width: none; margin: 0; padding: 0; overflow: auto; }
+#raum { height: 100%; }
+.vorraum, .mitte { padding: 24px 16px; }
+.vorraum .karte { max-width: 520px; margin: 0 auto; }
+.mitte .karte { max-width: 420px; margin: 40px auto 0; text-align: center; }
+.vorraum h1 { margin: 0 0 4px; overflow-wrap: anywhere; }
+.unterzeile { margin-top: 0; }
+.vorbild { aspect-ratio: 16/9; background: #0d0d0d; border-radius: var(--radius2); overflow: hidden; }
+#vorschau { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.vorwahl { margin: 12px 0 0; }
+.vorwahl label { margin: 0; }
+.vorwahl button { margin-left: auto; }
+
+.konferenz { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 300px; grid-template-rows: minmax(0, 1fr) auto; }
+.konferenz.ohne-seite { grid-template-columns: minmax(0, 1fr); }
 .konferenz.ohne-seite .seite { display: none; }
-.buehne { display: grid; gap: 8px; padding: 10px; grid-auto-rows: 1fr; background: #0d0d0d; min-height: 0; }
-.kachel { position: relative; background: #1d1d1d; border-radius: 10px; overflow: hidden; min-height: 0; }
-.kachel video { width: 100%; height: 100%; object-fit: cover; background: #111; }
+.buehne { display: grid; gap: 8px; padding: 10px; grid-auto-rows: minmax(0, 1fr); background: #0d0d0d; min-height: 0; }
+.buehne.sprecher { grid-template-columns: repeat(var(--kleine, 1), minmax(0, 1fr)) !important; grid-template-rows: minmax(0, 4fr); }
+.buehne.sprecher .kachel.gross { grid-column: 1 / -1; order: -1; }
+.kachel { position: relative; background: #1d1d1d; border-radius: 10px; overflow: hidden; min-height: 0; min-width: 0; }
+.kachel video { width: 100%; height: 100%; object-fit: cover; }
+.kachel.ohnevideo video { opacity: 0; }
 .kachel.ich video { transform: scaleX(-1); }
-.kachel.teilen video { object-fit: contain; transform: none; }
-.kachel .schild { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 13px; }
-.kachel .ohnebild { position: absolute; inset: 0; display: grid; place-items: center; color: #ddd; font-size: 40px; font-weight: 700; }
+.kachel.teilen video { object-fit: contain; transform: none; opacity: 1; }
+.kachel .ohnebild { position: absolute; inset: 0; display: none; place-items: center; color: #ddd; font-size: 40px; font-weight: 700; pointer-events: none; }
+.kachel.ohnevideo:not(.teilen) .ohnebild { display: grid; }
+.kachel .schild { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px); background: rgba(0,0,0,.65); color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kachel .marke-hand { position: absolute; right: 8px; top: 8px; font-size: 26px; }
+.kachel .reaktion { position: absolute; left: 50%; top: 40%; translate: -50% -50%; font-size: 56px; pointer-events: none; }
 .kachel.spricht { outline: 3px solid #3fb873; outline-offset: -3px; }
 .seite { border-left: 1px solid var(--rand); padding: 10px 14px; overflow-y: auto; background: var(--flaeche); grid-row: 1 / 3; grid-column: 2; }
-.steuerung { display: flex; gap: 8px; justify-content: center; padding: 10px; background: var(--flaeche); border-top: 1px solid var(--rand); flex-wrap: wrap; }
+.seite h3 { font-size: 12px; color: var(--muted); margin: 16px 0 6px; }
+.steuerung { grid-column: 1; display: flex; gap: 8px; justify-content: center; padding: 10px; background: var(--flaeche); border-top: 1px solid var(--rand); flex-wrap: wrap; }
 .steuerung button.aus { background: var(--schlecht); color: #fff; border-color: var(--schlecht); }
-.steuerung button.an { background: var(--info); color: #fff; border-color: var(--info); }
+.steuerung button[aria-pressed=true], .steuerung button.an { background: var(--akzent); color: var(--akzent-text); }
+.reaktionen { display: inline-flex; gap: 2px; }
+.reaktionen button { padding: 6px 8px; }
 .leute { list-style: none; padding: 0; margin: 0; }
-.leute li { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
-.leute li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.leute button { padding: 2px 6px; font-size: 12px; }
-.chat { max-height: 34vh; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
-.chat b { font-weight: 600; }
-.anfragen .karte { padding: 10px; margin-bottom: 8px; border-color: var(--warn); }
+.leute li { padding: 6px 0; border-bottom: 1px solid var(--rand); }
+.leute li > span { display: block; overflow-wrap: anywhere; }
+.leute .rolle { color: var(--muted); font-size: 12px; }
+.leute button, #anfragen button { min-height: 28px; padding: 2px 7px; font-size: 12px; margin: 5px 5px 0 0; }
+.chat { max-height: 34vh; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.chat .meldung { color: var(--muted); }
+.chatform { display: flex; gap: 6px; margin-top: 6px; }
+#anfragen .karte { padding: 10px; margin-bottom: 8px; border-color: var(--warn); }
 @media (max-width: 760px) {
-  .konferenz { grid-template-columns: 1fr; }
-  .seite { position: fixed; inset: 52px 0 60px 0; z-index: 5; grid-row: auto; grid-column: auto; }
-  .konferenz.ohne-seite .seite { display: none; }
+  .konferenz { grid-template-columns: minmax(0, 1fr); position: relative; }
+  .seite { position: absolute; inset: 0 0 auto; height: 60%; z-index: 5; grid-row: auto; grid-column: auto; border-bottom: 1px solid var(--rand); }
+  .steuerung { gap: 5px; padding: 6px; }
+  .steuerung button { padding: 4px 8px; min-height: 32px; font-size: 12px; }
 }

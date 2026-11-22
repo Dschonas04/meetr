@@ -63,5 +63,10 @@ func (a *App) adminEntziehen(ctx context.Context, kennung string) error {
 			return err
 		}
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	// Auch was offen ist, endet mit dem Konto.
+	a.hub.kontoWeg(kennung)
+	return nil
 }

@@ -2,6 +2,9 @@
 
 ## Unveröffentlicht
 
+- Sicherheit: TURN-Zugangsdaten nur für Zugelassene, Tempogrenze je Verbindung, Moderation nur nach Rolle, Verbindungen enden mit dem Konto.
+- Kennwort und Termin je Raum, Raum abschließen, Sprecheransicht, Reaktionen, Kamera aus.
+- Bildschirm teilen geht ohne Kamera und mehrfach, die Kamera geht beim Umschalten wirklich aus.
 - Sicherheit: Die SSO-Einstellung hat einen Leser für Prüfung und Speichern und lehnt Unlesbares ab.
 - Doppelte id im Seitengerüst behoben.
 - Sicherheit: Die Sperre der Verwaltung wartet weder auf den Browser noch auf den Anbieter und hat eine Zeitgrenze.

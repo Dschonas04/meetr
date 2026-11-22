@@ -1,9 +1,9 @@
 package main
 
 import (
+	"log"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 )
 
@@ -13,20 +13,22 @@ type Raum struct {
 	Erstellt                                    time.Time
 	Zuletzt                                     *time.Time
 	Jetzt                                       int
+	Kennwort                                    string // Hash, leer: keins
+	Beginn                                      *time.Time
 }
 
 func (a *App) raumLaden(r *http.Request, kennung string) (Raum, error) {
 	var x Raum
-	err := a.db.QueryRow(r.Context(), `SELECT id::text, kennung, name, gastgeber, gastgeber_name, gaeste, erstellt, zuletzt
+	err := a.db.QueryRow(r.Context(), `SELECT id::text, kennung, name, gastgeber, gastgeber_name, gaeste, erstellt, zuletzt, kennwort, beginn
 		FROM raeume WHERE kennung=$1`, kennung).
-		Scan(&x.ID, &x.Kennung, &x.Name, &x.Gastgeber, &x.GastgeberName, &x.Gaeste, &x.Erstellt, &x.Zuletzt)
+		Scan(&x.ID, &x.Kennung, &x.Name, &x.Gastgeber, &x.GastgeberName, &x.Gaeste, &x.Erstellt, &x.Zuletzt, &x.Kennwort, &x.Beginn)
 	return x, err
 }
 
 func (a *App) start(w http.ResponseWriter, r *http.Request) {
 	kennung, _, _ := a.wer(r)
-	rows, err := a.db.Query(r.Context(), `SELECT id::text, kennung, name, gastgeber, gastgeber_name, gaeste, erstellt, zuletzt
-		FROM raeume WHERE gastgeber=$1 ORDER BY COALESCE(zuletzt, erstellt) DESC`, kennung)
+	rows, err := a.db.Query(r.Context(), `SELECT id::text, kennung, name, gastgeber, gastgeber_name, gaeste, erstellt, zuletzt, kennwort, beginn
+		FROM raeume WHERE gastgeber=$1 ORDER BY (beginn IS NULL OR beginn < now() - interval '2 hours'), beginn, COALESCE(zuletzt, erstellt) DESC`, kennung)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -35,7 +37,7 @@ func (a *App) start(w http.ResponseWriter, r *http.Request) {
 	var l []Raum
 	for rows.Next() {
 		var x Raum
-		if rows.Scan(&x.ID, &x.Kennung, &x.Name, &x.Gastgeber, &x.GastgeberName, &x.Gaeste, &x.Erstellt, &x.Zuletzt) == nil {
+		if rows.Scan(&x.ID, &x.Kennung, &x.Name, &x.Gastgeber, &x.GastgeberName, &x.Gaeste, &x.Erstellt, &x.Zuletzt, &x.Kennwort, &x.Beginn) == nil {
 			x.Jetzt = a.hub.anzahl(x.Kennung)
 			l = append(l, x)
 		}
@@ -60,17 +62,31 @@ func (a *App) raumAnlegen(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bitte anmelden", http.StatusUnauthorized)
 		return
 	}
-	titel := strings.TrimSpace(r.FormValue("name"))
+	titel := sauber(r.FormValue("name"), 100)
 	if titel == "" {
 		titel = "Besprechung"
 	}
-	if len(titel) > 100 {
-		titel = titel[:100]
+	beginn, ok := beginnLesen(r.FormValue("beginn"))
+	if !ok {
+		zurueck(w, r, "/", "Den Termin gibt es so nicht")
+		return
+	}
+	geheim := ""
+	if p := r.FormValue("kennwort"); len(p) > 200 {
+		zurueck(w, r, "/", "Das Kennwort ist zu lang")
+		return
+	} else if p != "" {
+		geheim = ssoPasswortHash(p)
 	}
 	k := neueKennung()
-	if _, err := a.db.Exec(r.Context(), `INSERT INTO raeume (kennung, name, gastgeber, gastgeber_name, gaeste) VALUES ($1, $2, $3, $4, $5)`,
-		k, titel, kennung, name, r.FormValue("gaeste") == "ja"); err != nil {
-		zurueck(w, r, "/", "Fehler: "+err.Error())
+	if _, err := a.db.Exec(r.Context(), `INSERT INTO raeume (kennung, name, gastgeber, gastgeber_name, gaeste, kennwort, beginn) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		k, titel, kennung, name, r.FormValue("gaeste") == "ja", geheim, beginn); err != nil {
+		log.Printf("Raum anlegen: %v", err)
+		zurueck(w, r, "/", "Nicht angelegt")
+		return
+	}
+	if beginn != nil {
+		zurueck(w, r, "/", "Termin angelegt")
 		return
 	}
 	http.Redirect(w, r, "/r/"+k, http.StatusSeeOther)
@@ -104,6 +120,6 @@ func (a *App) raum(w http.ResponseWriter, r *http.Request) {
 	}
 	a.v.zeigen(w, r, "raum", a.daten(r, x.Name, "", map[string]any{
 		"R": x, "Angemeldet": angemeldet, "Name": name, "Gastgeber": kennung == x.Gastgeber,
-		"ICE": a.ice, "Link": basis(r) + "/r/" + x.Kennung,
+		"Reaktionen": reaktionen, "Link": basis(r) + "/r/" + x.Kennung,
 	}))
 }
