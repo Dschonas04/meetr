@@ -2,6 +2,8 @@
 
 ## Unveröffentlicht
 
+- Doppelte id im Seitengerüst behoben.
+- Sicherheit: Die Sperre der Verwaltung wartet weder auf den Browser noch auf den Anbieter und hat eine Zeitgrenze.
 - Sicherheit: Änderungen an Konten, Rollen und Anmeldung laufen nacheinander, Prüfung und Schreiben unter einer Sperre.
 - Sicherheit: Mit einem Konto enden seine Rechte und Räume; geprüft wird erst, wenn die Anfrage vollständig da ist.
 - Sicherheit: Admin wird man nur mit dem Einrichtungscode oder über `MEETR_ADMIN`, nicht durch die erste Anmeldung. Kennungen von eigenen Konten und SSO sind getrennt.
