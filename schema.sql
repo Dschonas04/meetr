@@ -9,3 +9,10 @@ CREATE TABLE IF NOT EXISTS raeume (
 	erstellt   timestamptz NOT NULL DEFAULT now(),
 	zuletzt    timestamptz
 );
+
+-- Wer die App verwaltet. Die erste angemeldete Person trägt sich ein.
+CREATE TABLE IF NOT EXISTS admins (
+	kennung text PRIMARY KEY,
+	erster  boolean UNIQUE,
+	seit    timestamptz NOT NULL DEFAULT now()
+);

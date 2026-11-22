@@ -1,1 +1,1 @@
-{{define "nav"}}<a href="/"{{if gleich .Nav "start"}} class="aktiv"{{end}}>Räume</a>{{end}}
+{{define "nav"}}<a href="/"{{if gleich .Nav "start"}} class="aktiv"{{end}}>Räume</a>{{if .Admin}}<a href="/sso/konten">Konten</a>{{end}}{{end}}
