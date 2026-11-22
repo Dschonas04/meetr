@@ -73,3 +73,35 @@ func TestHashPlatz(t *testing.T) {
 		f()
 	}
 }
+
+func TestSchrankeBlock(t *testing.T) {
+	var s schranke
+	durch := 0
+	for i := range 200 {
+		if s.nimm(werFragt(false, "", fmt.Sprintf("2001:db8:7:%x::1", i)), false) {
+			durch++
+		}
+	}
+	if durch > blockVoll+1 {
+		t.Errorf("ein /48 nimmt dem Raum %d Versuche", durch)
+	}
+	if !s.nimm(werFragt(false, "", "2001:db8:8::1"), false) {
+		t.Error("ein /48 sperrt die anderen aus")
+	}
+}
+
+func TestSchrankeVergisstKeineSperre(t *testing.T) {
+	var s schranke
+	for range versucheVoll {
+		s.nimm("konto:raetselt", true)
+	}
+	if s.nimm("konto:raetselt", true) {
+		t.Fatal("keine Grenze")
+	}
+	for i := range merkeHoechstens + 10 {
+		s.nimm(fmt.Sprint("konto:", i), true)
+	}
+	if s.nimm("konto:raetselt", true) {
+		t.Error("Sperre durch Verdrängen gelöscht")
+	}
+}

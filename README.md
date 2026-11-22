@@ -41,6 +41,8 @@ vermittelt nur. Er braucht dafür keine UDP-Ports.
   ist die Adresse eines Gastes fälschbar (die Grenze je Raum gilt trotzdem).
 * Kein SFU: jeder schickt an jeden, deshalb höchstens 12 Personen, flüssig eher 4 bis 6.
 * Keine Aufzeichnung, keine Untertitel, kein Ton beim Bildschirmteilen.
+* Rät jemand aus vielen Netzen am Kennwort, warten unbekannte Gäste mit. Gastgeber,
+  Konten und wer schon einmal drin war, kommen weiter hinein.
 * Ein abgeschlossener Raum öffnet sich, wenn alle gegangen sind.
 
 ## Entwickeln

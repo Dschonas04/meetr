@@ -2,6 +2,7 @@
 
 ## Unveröffentlicht
 
+- Sicherheit: Ein IPv6-Anschluss leert die Raumgrenze nicht, eine Sperre wird nicht verdrängt.
 - Sicherheit: Kennwortgrenze je Netz und je Raum, feste Obergrenzen für Speicher und Hashen.
 - Sicherheit: offene Verbindungen prüfen ihre Sitzung, Kennwort-Grenze je Konto oder Adresse, nur gültiges UTF-8 wird weitergereicht.
 - Sicherheit: TURN-Zugangsdaten nur für Zugelassene, Tempogrenze je Verbindung, Moderation nur nach Rolle, Verbindungen enden mit dem Konto.

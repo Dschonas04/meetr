@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Die Schranke vor dem Kennwort eines Raums, mit drei Grenzen:
-//   - je Konto oder Netz des Gastes (IPv6 als /64), damit Raten nur den Ratenden sperrt
+//   - je Konto oder Netz des Gastes (IPv6 als /64 und zusammen als /48), damit
+//     Raten nur den Ratenden sperrt und ein Anschluss den Raum nicht leer zieht
 //   - je Raum für unbekannte Gäste, die gilt auch bei gefälschter Adresse
 //   - gleichzeitiges Hashen, mit Wartezeit statt endloser Schlange
 //
@@ -19,6 +21,9 @@ const (
 	versucheJeSekunde = 0.1
 	raumVoll          = 60
 	raumJeSekunde     = 1
+	blockVoll         = 24
+	blockJeSekunde    = 0.3 // weniger, als der Raum nachfüllt
+	erholtNach        = versucheVoll / versucheJeSekunde * time.Second
 	merkeHoechstens   = 1000
 	hashWarten        = 5 * time.Second
 )
@@ -29,14 +34,10 @@ var (
 	hashKonten = make(chan struct{}, 2)
 )
 
-type bekannter struct {
-	eimer
-	stimmte bool
-}
-
 type schranke struct {
 	mu    sync.Mutex
-	je    map[string]*bekannter
+	je    map[string]*eimer
+	richt map[string]time.Time // wo das Kennwort schon stimmte, getrennt von den Grenzen
 	alle  eimer
 	platz chan struct{} // je Raum zwei Gäste zugleich, damit keiner alle Plätze belegt
 }
@@ -54,54 +55,93 @@ func werFragt(angemeldet bool, kennung, adresse string) string {
 	return "netz:unbekannt"
 }
 
+// blockVon ist das /48 eines IPv6-Netzes, sonst leer.
+func blockVon(wer string) string {
+	a, ok := strings.CutPrefix(wer, "netz:")
+	if ip := net.ParseIP(a); ok && ip != nil && ip.To4() == nil {
+		return "block:" + ip.Mask(net.CIDRMask(48, 128)).String()
+	}
+	return ""
+}
+
+// eimerVon holt einen Eimer. Ist kein Platz, wird nur verdrängt, was ohnehin
+// wieder voll ist: vergessen hieße sonst, eine Sperre aufzuheben.
+func (s *schranke) eimerVon(wer string) *eimer {
+	if e := s.je[wer]; e != nil {
+		return e
+	}
+	if len(s.je) >= merkeHoechstens {
+		for k, e := range s.je {
+			if time.Since(e.seit) >= erholtNach {
+				delete(s.je, k)
+			}
+		}
+		if len(s.je) >= merkeHoechstens {
+			return nil
+		}
+	}
+	e := &eimer{}
+	s.je[wer] = e
+	return e
+}
+
 // nimm reserviert einen Versuch, richtig gibt ihn zurück.
 func (s *schranke) nimm(wer string, konto bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.je == nil {
-		s.je = map[string]*bekannter{}
+		s.je = map[string]*eimer{}
 	}
-	b := s.je[wer]
-	neu := b == nil
-	if neu {
-		b = &bekannter{}
+	_, stimmte := s.richt[wer]
+	// Erst nur nachsehen: wen die Raumgrenze abweist, der kostet keinen Speicher.
+	if !konto && !stimmte {
+		probe := s.alle
+		if !probe.nimm(raumJeSekunde, raumVoll) {
+			return false
+		}
 	}
-	if !b.nimm(versucheJeSekunde, versucheVoll) {
+	e := s.eimerVon(wer)
+	if e == nil || !e.nimm(versucheJeSekunde, versucheVoll) {
 		return false
 	}
-	if !konto && !b.stimmte && !s.alle.nimm(raumJeSekunde, raumVoll) {
-		return false // und nichts gemerkt: abgewiesene Adressen kosten keinen Speicher
+	if konto || stimmte {
+		return true
 	}
-	if neu {
-		if len(s.je) >= merkeHoechstens {
-			s.verdraengen()
-		}
-		s.je[wer] = b
-	}
-	return true
-}
-
-// verdraengen wirft den ältesten hinaus, zuerst einen, der nie richtig lag.
-func (s *schranke) verdraengen() {
-	var raus string
-	var opfer *bekannter
-	for k, b := range s.je {
-		if opfer == nil || (opfer.stimmte && !b.stimmte) || (opfer.stimmte == b.stimmte && b.seit.Before(opfer.seit)) {
-			raus, opfer = k, b
+	if block := blockVon(wer); block != "" {
+		if b := s.eimerVon(block); b == nil || !b.nimm(blockJeSekunde, blockVoll) {
+			return false
 		}
 	}
-	delete(s.je, raus)
+	return s.alle.nimm(raumJeSekunde, raumVoll)
 }
 
 func (s *schranke) richtig(wer string, konto bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if b := s.je[wer]; b != nil {
-		b.rest = min(versucheVoll, b.rest+1)
-		if !konto && !b.stimmte {
-			s.alle.rest = min(raumVoll, s.alle.rest+1)
+	if e := s.je[wer]; e != nil {
+		e.rest = min(versucheVoll, e.rest+1)
+	}
+	if konto {
+		return
+	}
+	if _, schon := s.richt[wer]; !schon {
+		s.alle.rest = min(raumVoll, s.alle.rest+1)
+		if e := s.je[blockVon(wer)]; e != nil {
+			e.rest = min(blockVoll, e.rest+1)
 		}
-		b.stimmte = true
+	}
+	if s.richt == nil {
+		s.richt = map[string]time.Time{}
+	}
+	s.richt[wer] = time.Now()
+	if len(s.richt) > merkeHoechstens {
+		raus, seit := "", time.Now()
+		for k, z := range s.richt {
+			if raus == "" || z.Before(seit) {
+				raus, seit = k, z
+			}
+		}
+		delete(s.richt, raus)
 	}
 }
 
