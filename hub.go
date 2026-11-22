@@ -91,9 +91,48 @@ type teilnehmer struct {
 type raumZustand struct {
 	mu       sync.Mutex
 	alle     map[string]*teilnehmer
-	zu       bool // gelöscht, hier kommt keiner mehr herein
-	gesperrt bool // vom Gastgeber abgeschlossen, bis der Raum leer ist
-	versuche eimer
+	zu       bool              // gelöscht, hier kommt keiner mehr herein
+	gesperrt bool              // vom Gastgeber abgeschlossen, bis der Raum leer ist
+	versuche map[string]*eimer // falsche Kennwörter je Konto oder Adresse
+}
+
+// Das Hashen kostet: mehr als so viele laufen nicht zugleich.
+var kennwortPlaetze = make(chan struct{}, 4)
+
+const (
+	versucheVoll      = 8
+	versucheJeSekunde = 0.1
+)
+
+// versuch reserviert einen Versuch, ein richtiger gibt ihn zurück.
+func (z *raumZustand) versuch(wer string) bool {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if z.versuche == nil {
+		z.versuche = map[string]*eimer{}
+	}
+	if len(z.versuche) >= 1000 {
+		// Wer sich seit zwei Minuten nicht meldet, ist ohnehin wieder bei voll.
+		for k, e := range z.versuche {
+			if time.Since(e.seit) > 2*time.Minute {
+				delete(z.versuche, k)
+			}
+		}
+	}
+	e := z.versuche[wer]
+	if e == nil {
+		e = &eimer{}
+		z.versuche[wer] = e
+	}
+	return e.nimm(versucheJeSekunde, versucheVoll)
+}
+
+func (z *raumZustand) versuchStimmte(wer string) {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if e := z.versuche[wer]; e != nil {
+		e.rest = min(versucheVoll, e.rest+1)
+	}
 }
 
 type Hub struct {
@@ -291,19 +330,37 @@ func (a *App) verbindung(w http.ResponseWriter, r *http.Request) {
 	}
 	gastgeber := angemeldet && kennung == x.Gastgeber
 	if x.Kennwort != "" && !gastgeber {
-		z.mu.Lock()
-		darf := z.versuche.nimm(1, 20)
-		z.mu.Unlock()
-		if !darf {
+		wer := "adresse:" + ssoAdresse(r)
+		if angemeldet {
+			wer = "konto:" + kennung
+		}
+		if !z.versuch(wer) {
 			absage("zu-oft")
 			return
 		}
-		if len(hallo.Text) > 200 || !ssoPasswortPruefen(x.Kennwort, hallo.Text) {
+		select {
+		case kennwortPlaetze <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
+		stimmt := len(hallo.Text) <= 200 && ssoPasswortPruefen(x.Kennwort, hallo.Text)
+		<-kennwortPlaetze
+		if !stimmt {
 			absage("kennwort")
 			return
 		}
+		z.versuchStimmte(wer)
 	}
 	c.SetReadLimit(64 << 10)
+	// gilt: die Sitzung ist noch dieselbe. Ein neues Passwort, eine geänderte
+	// Freigabe oder ein gelöschtes Konto beendet auch, was schon offen ist.
+	gilt := func() bool {
+		if !angemeldet {
+			return true
+		}
+		k, _, ok := a.wer(r)
+		return ok && k == kennung
+	}
 
 	t := &teilnehmer{Person: Person{ID: zufallsID(), Name: name, Angemeldet: angemeldet, Gastgeber: gastgeber},
 		kennung: kennung, raus: make(chan Nachricht, warteschlange), weg: weg}
@@ -314,6 +371,8 @@ func (a *App) verbindung(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case z.zu:
 		nein = "weg-raum"
+	case !gilt(): // das Hashen hat gedauert
+		nein = "anmelden"
 	case z.gesperrt && !gastgeber:
 		nein = "gesperrt"
 	case drin >= maxTeilnehmer, !angemeldet && len(z.alle)-drin >= maxWartende:
@@ -366,6 +425,8 @@ func (a *App) verbindung(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		takt := time.NewTicker(25 * time.Second)
 		defer takt.Stop()
+		wache := time.NewTicker(2 * time.Second)
+		defer wache.Stop()
 		for {
 			select {
 			case <-ctx.Done():
@@ -375,6 +436,11 @@ func (a *App) verbindung(w http.ResponseWriter, r *http.Request) {
 				err := wsjson.Write(sctx, c, n)
 				ab()
 				if err != nil {
+					weg()
+					return
+				}
+			case <-wache.C:
+				if !gilt() {
 					weg()
 					return
 				}
@@ -391,8 +457,13 @@ func (a *App) verbindung(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	for {
+		typ, roh, err := c.Read(ctx)
+		if err != nil {
+			return
+		}
+		// encoding/json reicht kaputtes UTF-8 in RawMessage durch.
 		var n Nachricht
-		if err := wsjson.Read(ctx, c, &n); err != nil {
+		if typ != websocket.MessageText || !utf8.Valid(roh) || json.Unmarshal(roh, &n) != nil || !gilt() {
 			return
 		}
 		// Wer flutet, fliegt selbst, bevor die Warteschlange der anderen voll ist.

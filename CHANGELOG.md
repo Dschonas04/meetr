@@ -2,6 +2,7 @@
 
 ## Unveröffentlicht
 
+- Sicherheit: offene Verbindungen prüfen ihre Sitzung, Kennwort-Grenze je Konto oder Adresse, nur gültiges UTF-8 wird weitergereicht.
 - Sicherheit: TURN-Zugangsdaten nur für Zugelassene, Tempogrenze je Verbindung, Moderation nur nach Rolle, Verbindungen enden mit dem Konto.
 - Kennwort und Termin je Raum, Raum abschließen, Sprecheransicht, Reaktionen, Kamera aus.
 - Bildschirm teilen geht ohne Kamera und mehrfach, die Kamera geht beim Umschalten wirklich aus.

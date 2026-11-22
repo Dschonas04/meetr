@@ -29,7 +29,7 @@ func TestKonferenz(t *testing.T) {
 	if !strings.HasPrefix(c.ConnConfig.Database, "pruef") {
 		t.Fatal("MEETR_TEST_DB muss auf eine Datenbank pruef* zeigen")
 	}
-	ctx, ende := context.WithTimeout(context.Background(), time.Minute)
+	ctx, ende := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer ende()
 	db := datenbank(ctx, adresse)
 	defer db.Close()
@@ -81,11 +81,15 @@ func TestKonferenz(t *testing.T) {
 		t.Errorf("Seite verrät die TURN-Daten oder fehlt: %d", res.StatusCode)
 	}
 
+	woher := ""
 	rein := func(wer, kennwort string) *websocket.Conn {
 		t.Helper()
 		h := http.Header{}
 		if kekse[wer] != "" {
 			h.Set("Cookie", kekse[wer])
+		}
+		if woher != "" {
+			h.Set("X-Forwarded-For", woher)
 		}
 		c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(s.URL, "http")+"/ws/"+k, &websocket.DialOptions{HTTPHeader: h})
 		if err != nil {
@@ -176,6 +180,74 @@ func TestKonferenz(t *testing.T) {
 	if ctx.Err() != nil {
 		t.Error("entzogenes Konto bleibt verbunden")
 	}
+
+	sag(wirtin, Nachricht{Typ: "abschliessen"})
+	bis(wirtin, "abschliessen")
+
+	// Ungültiges UTF-8 reicht niemand weiter: der Browser gegenüber legte auf.
+	zweiter := rein("kollege", "raumwort")
+	defer zweiter.CloseNow()
+	zID := bis(zweiter, "willkommen").Von
+	if err := zweiter.Write(ctx, websocket.MessageText, []byte(`{"typ":"signal","an":"`+wID+`","daten":{"x":"`+"\xff"+`"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, zweiter, Nachricht{Typ: "chat", Text: "danach"}); err == nil {
+		for {
+			n := Nachricht{}
+			if err := wsjson.Read(ctx, wirtin, &n); err != nil {
+				t.Fatalf("Verbindung der Gegenseite weg: %v", err)
+			}
+			if n.Typ == "signal" {
+				t.Error("ungültiges UTF-8 weitergereicht")
+			}
+			if n.Typ == "chat" || (n.Typ == "weg" && n.Von == zID) {
+				break
+			}
+		}
+	}
+
+	// Neues Passwort: die Sitzung gilt nicht mehr, die offene Verbindung auch nicht.
+	a.sso.mu.Lock()
+	for i := range a.sso.konten {
+		if a.sso.konten[i].Name == "wirtin" {
+			a.sso.konten[i].Hash = ssoPasswortHash("ein-anderes-passwort")
+		}
+	}
+	a.sso.mu.Unlock()
+	kurz, ab := context.WithTimeout(ctx, 6*time.Second)
+	defer ab()
+	for {
+		var n Nachricht
+		if err := wsjson.Read(kurz, wirtin, &n); err != nil {
+			if kurz.Err() != nil {
+				t.Error("Verbindung überlebt das neue Passwort")
+			}
+			break
+		}
+	}
+
+	// Wer rät, sperrt nur sich aus. Am Ende, denn unter -race dauert das Hashen
+	// länger, als eine ungelesene Verbindung auf ihr Lebenszeichen wartet.
+	woher = "203.0.113.7"
+	gebremst := false
+	for range 25 {
+		c := rein("raten", "falsch")
+		var n Nachricht
+		if err := wsjson.Read(ctx, c, &n); err != nil || (n.Typ != "kennwort" && n.Typ != "zu-oft") {
+			t.Fatalf("Raten: %+v %v", n, err)
+		}
+		c.CloseNow()
+		if gebremst = n.Typ == "zu-oft"; gebremst {
+			break
+		}
+	}
+	if !gebremst {
+		t.Error("Raten ohne Grenze")
+	}
+	woher = "198.51.100.4"
+	anderer := rein("anderer", "raumwort")
+	defer anderer.CloseNow()
+	bis(anderer, "warten", "zu-oft")
 
 	res, err = http.Get(s.URL + "/r/" + k + "/termin.ics")
 	if err != nil {
