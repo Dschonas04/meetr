@@ -46,3 +46,22 @@ func (a *App) ersterAdmin(ctx context.Context, kennung, _ string) error {
 	_, err := a.db.Exec(ctx, `INSERT INTO admins (kennung) VALUES ($1) ON CONFLICT DO NOTHING`, kennung)
 	return err
 }
+
+// adminEntziehen läuft vor dem Löschen eines Kontos und vor dem Anlegen eines
+// neuen mit demselben Namen: weder Rechte noch Räume gehen an den Namen über.
+func (a *App) adminEntziehen(ctx context.Context, kennung string) error {
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	for _, q := range []string{
+		`DELETE FROM admins WHERE kennung = $1`,
+		`UPDATE raeume SET gastgeber = 'geloescht:' || id::text WHERE gastgeber = $1`,
+	} {
+		if _, err := tx.Exec(ctx, q, kennung); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}

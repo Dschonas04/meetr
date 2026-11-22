@@ -50,6 +50,7 @@ func main() {
 	// Räume und ihre Verbindung prüfen selbst, ob Gäste erlaubt sind.
 	a.admins = adminListe(umgebung("MEETR_ADMIN", ""))
 	a.sso.ErstesKonto = a.ersterAdmin
+	a.sso.KontoWeg = a.adminEntziehen
 	a.sso.Frei = []string{"/statisch/", "/healthz", "/r/", "/ws/"}
 
 	adresse := ":" + umgebung("MEETR_PORT", "8370")
@@ -88,6 +89,9 @@ func (a *App) wege() http.Handler {
 
 func (a *App) angemeldet(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !inhaltZuerst(w, r) {
+			return
+		}
 		// Anmeldung und Konten verwalten nur Admins; vor der Einrichtung, wer
 		// den Code aus dem Log hat.
 		if !a.sso.Geschuetzt() && a.sso.EinrichtungErlaubt(w, r) {
