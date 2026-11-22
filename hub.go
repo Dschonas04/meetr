@@ -91,48 +91,9 @@ type teilnehmer struct {
 type raumZustand struct {
 	mu       sync.Mutex
 	alle     map[string]*teilnehmer
-	zu       bool              // gelöscht, hier kommt keiner mehr herein
-	gesperrt bool              // vom Gastgeber abgeschlossen, bis der Raum leer ist
-	versuche map[string]*eimer // falsche Kennwörter je Konto oder Adresse
-}
-
-// Das Hashen kostet: mehr als so viele laufen nicht zugleich.
-var kennwortPlaetze = make(chan struct{}, 4)
-
-const (
-	versucheVoll      = 8
-	versucheJeSekunde = 0.1
-)
-
-// versuch reserviert einen Versuch, ein richtiger gibt ihn zurück.
-func (z *raumZustand) versuch(wer string) bool {
-	z.mu.Lock()
-	defer z.mu.Unlock()
-	if z.versuche == nil {
-		z.versuche = map[string]*eimer{}
-	}
-	if len(z.versuche) >= 1000 {
-		// Wer sich seit zwei Minuten nicht meldet, ist ohnehin wieder bei voll.
-		for k, e := range z.versuche {
-			if time.Since(e.seit) > 2*time.Minute {
-				delete(z.versuche, k)
-			}
-		}
-	}
-	e := z.versuche[wer]
-	if e == nil {
-		e = &eimer{}
-		z.versuche[wer] = e
-	}
-	return e.nimm(versucheJeSekunde, versucheVoll)
-}
-
-func (z *raumZustand) versuchStimmte(wer string) {
-	z.mu.Lock()
-	defer z.mu.Unlock()
-	if e := z.versuche[wer]; e != nil {
-		e.rest = min(versucheVoll, e.rest+1)
-	}
+	zu       bool     // gelöscht, hier kommt keiner mehr herein
+	gesperrt bool     // vom Gastgeber abgeschlossen, bis der Raum leer ist
+	schranke schranke // vor dem Kennwort, mit eigener Sperre
 }
 
 type Hub struct {
@@ -330,26 +291,23 @@ func (a *App) verbindung(w http.ResponseWriter, r *http.Request) {
 	}
 	gastgeber := angemeldet && kennung == x.Gastgeber
 	if x.Kennwort != "" && !gastgeber {
-		wer := "adresse:" + ssoAdresse(r)
-		if angemeldet {
-			wer = "konto:" + kennung
-		}
-		if !z.versuch(wer) {
+		wer := werFragt(angemeldet, kennung, ssoAdresse(r))
+		if !z.schranke.nimm(wer, angemeldet) {
 			absage("zu-oft")
 			return
 		}
-		select {
-		case kennwortPlaetze <- struct{}{}:
-		case <-ctx.Done():
+		frei, ok := z.schranke.hashPlatz(ctx, angemeldet)
+		if !ok {
+			absage("zu-oft")
 			return
 		}
 		stimmt := len(hallo.Text) <= 200 && ssoPasswortPruefen(x.Kennwort, hallo.Text)
-		<-kennwortPlaetze
+		frei()
 		if !stimmt {
 			absage("kennwort")
 			return
 		}
-		z.versuchStimmte(wer)
+		z.schranke.richtig(wer, angemeldet)
 	}
 	c.SetReadLimit(64 << 10)
 	// gilt: die Sitzung ist noch dieselbe. Ein neues Passwort, eine geänderte

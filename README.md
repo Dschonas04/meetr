@@ -37,6 +37,8 @@ vermittelt nur. Er braucht dafür keine UDP-Ports.
 
 ## Grenzen
 
+* Hinter einem Proxy auf demselben Rechner den Port nur an `127.0.0.1` binden, sonst
+  ist die Adresse eines Gastes fälschbar (die Grenze je Raum gilt trotzdem).
 * Kein SFU: jeder schickt an jeden, deshalb höchstens 12 Personen, flüssig eher 4 bis 6.
 * Keine Aufzeichnung, keine Untertitel, kein Ton beim Bildschirmteilen.
 * Ein abgeschlossener Raum öffnet sich, wenn alle gegangen sind.
